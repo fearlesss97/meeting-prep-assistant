@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Meeting Prep Assistant — Alexa+ Simulation</title>
+<style>
+  :root {
+    --bg: #0b0e17;
+    --panel: #161b29;
+    --accent: #4fc3f7;
+    --text: #e8ecf3;
+    --muted: #8892a6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 32px 16px;
+  }
+  h1 { font-size: 1.2rem; color: var(--muted); font-weight: 500; margin-bottom: 4px; }
+  .badge { color: var(--accent); font-weight: 600; }
+  #transcript {
+    width: 100%;
+    max-width: 560px;
+    flex: 1;
+    margin: 24px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .bubble {
+    padding: 10px 14px;
+    border-radius: 12px;
+    max-width: 85%;
+    line-height: 1.4;
+  }
+  .user { align-self: flex-end; background: var(--accent); color: #06202b; }
+  .assistant { align-self: flex-start; background: var(--panel); }
+  #controls {
+    width: 100%;
+    max-width: 560px;
+    display: flex;
+    gap: 8px;
+  }
+  input {
+    flex: 1;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid #2a3145;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 1rem;
+  }
+  button {
+    padding: 12px 16px;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: #06202b;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #mic { background: #2a3145; color: var(--text); font-size: 1.2rem; }
+  #mic.listening { background: #e74c3c; color: white; }
+  .hint { color: var(--muted); font-size: 0.85rem; margin-top: 10px; text-align: center; }
+</style>
+</head>
+<body>
+  <h1>Meeting Prep Assistant <span class="badge">· simulated Alexa+ experience</span></h1>
+  <div id="transcript"></div>
+  <div id="controls">
+    <button id="mic" title="Speak">🎤</button>
+    <input id="textInput" type="text" placeholder='Try: "Prep me for my Acme Corp meeting"' />
+    <button id="send">Send</button>
+  </div>
+  <p class="hint">Try a follow-up after your first question, e.g. "who else is joining?" — it remembers context.</p>
+
+<script>
+let sessionId = null;
+
+async function startSession() {
+  const res = await fetch("/api/session", { method: "POST" });
+  const data = await res.json();
+  sessionId = data.sessionId;
+}
+
+function addBubble(role, text) {
+  const el = document.createElement("div");
+  el.className = "bubble " + role;
+  el.textContent = text;
+  document.getElementById("transcript").appendChild(el);
+  el.scrollIntoView({ behavior: "smooth" });
+}
+
+function speak(text) {
+  if ("speechSynthesis" in window) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    speechSynthesis.speak(utterance);
+  }
+}
+
+async function sendCommand(text) {
+  if (!text.trim()) return;
+  addBubble("user", text);
+  const res = await fetch("/api/command", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, text }),
+  });
+  const data = await res.json();
+  const replyText = data.response || data.error || "Sorry, something went wrong.";
+  addBubble("assistant", replyText);
+  speak(replyText);
+}
+
+document.getElementById("send").addEventListener("click", () => {
+  const input = document.getElementById("textInput");
+  sendCommand(input.value);
+  input.value = "";
+});
+
+document.getElementById("textInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("send").click();
+});
+
+// Voice input via Web Speech API (Chrome-based browsers).
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const micButton = document.getElementById("mic");
+if (SpeechRecognition) {
+  const recognition = new SpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.interimResults = false;
+
+  micButton.addEventListener("click", () => {
+    recognition.start();
+    micButton.classList.add("listening");
+  });
+  recognition.addEventListener("result", (e) => {
+    const said = e.results[0][0].transcript;
+    sendCommand(said);
+  });
+  recognition.addEventListener("end", () => micButton.classList.remove("listening"));
+} else {
+  micButton.disabled = true;
+  micButton.title = "Voice input not supported in this browser — use text input";
+}
+
+startSession();
+</script>
+</body>
+</html>
